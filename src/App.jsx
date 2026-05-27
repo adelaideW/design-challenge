@@ -350,7 +350,7 @@ const GLOBAL_CSS = `
   .start-btn {
     display: inline-block; background: #111; color: #fff; border: none;
     padding: 13px 32px; font-size: 12px; font-family: 'Courier New', monospace;
-    letter-spacing: 2px; text-transform: uppercase; cursor: pointer; border-radius: 2px; transition: background 0.2s;
+    letter-spacing: 2px; text-transform: uppercase; cursor: pointer; border-radius: 8px; transition: background 0.2s;
   }
   .start-btn:hover { background: #333; }
 
