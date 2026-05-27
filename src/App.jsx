@@ -945,9 +945,9 @@ const HERO_CONTENT = {
     subtitle: "A real design prompt, live pushback, and honest feedback — just like the actual interview.",
   },
   jobs: {
-    label: "Design Jobs · Curated Roles",
-    title: <>Design roles at<br />top companies.</>,
-    subtitle: "Product design, UX, and design engineering positions — updated regularly.",
+    label: "Role Hunter · Design Jobs",
+    title: <>Hunt your next<br />design role.</>,
+    subtitle: "Curated product design, UX, and design engineering roles — plus a mock interview to practice design challenges.",
   },
 };
 
