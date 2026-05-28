@@ -337,11 +337,9 @@ function JobsTab({
 
   const handleCompanyClick = (company) => {
     setCompanyFilter(prev => prev === company ? "" : company);
-    tableTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   const handleAreaClick = (area) => {
     setAreaFilter(prev => prev === area ? "" : area);
-    tableTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const SortIcon = ({ col }) => {
@@ -553,7 +551,11 @@ function InterviewTab() {
                 rows={1}
               />
               <button className="send-btn" onClick={sendMessage} disabled={!input.trim() || loading}>Send ↑</button>
-              <button className="restart-btn" onClick={restart} style={{ padding: "10px 14px", marginLeft: 6 }}>
+              <button
+                className="restart-btn"
+                onClick={restart}
+                style={{ padding: "10px 20px", borderRadius: 8, marginLeft: 6 }}
+              >
                 Restart
               </button>
             </div>
