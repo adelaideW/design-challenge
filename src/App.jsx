@@ -5,17 +5,6 @@ import { locationMatches } from "./lib/jobs.js";
 
 // ─── MOCK INTERVIEW ──────────────────────────────────────────────────────────
 
-const ASCII_CHARS = "01<>{}[]|\\/-+*=~^%$#@!?";
-function buildAsciiGrid(cols, rows) {
-  return Array.from({ length: rows }, () =>
-    Array.from({ length: cols }, () =>
-      ASCII_CHARS[Math.floor(Math.random() * ASCII_CHARS.length)]
-    ).join(" ")
-  ).join("\n");
-}
-const ASCII_GRID = buildAsciiGrid(52, 18);
-
-
 // ─── SHARED STYLES ───────────────────────────────────────────────────────────
 
 const GLOBAL_CSS = `
@@ -299,7 +288,7 @@ function JobsControls({
         onChange={e => setSearch(e.target.value)}
       />
       <select className="filter-select" value={areaFilter} onChange={e => setAreaFilter(e.target.value)}>
-        <option value="">All areas</option>
+        <option value="">All industries</option>
         {areas.map(a => <option key={a} value={a}>{a}</option>)}
       </select>
       <select className="filter-select" value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}>
@@ -328,7 +317,7 @@ function JobsControls({
 
 // ─── JOBS TAB ────────────────────────────────────────────────────────────────
 
-const SORT_KEYS = { Company: "company", Role: "role", Area: "area", Location: "location", Posted: "postedDays" };
+const SORT_KEYS = { Company: "company", Role: "role", Industry: "area", Location: "location", Posted: "postedDays" };
 
 function JobsTab({
   jobs,
@@ -434,7 +423,7 @@ function JobsTab({
             </colgroup>
             <thead>
               <tr>
-                {["Company", "Role", "Area", "Location", "Posted", "Apply"].map(col => (
+                {["Company", "Role", "Industry", "Location", "Posted", "Apply"].map(col => (
                   <th
                     key={col}
                     onClick={() => handleSort(col)}
@@ -467,7 +456,7 @@ function JobsTab({
                       className={`area-badge ${areaFilter === job.area ? "filtered" : ""}`}
                       onClick={() => handleAreaClick(job.area)}
                       style={{ border: 0, cursor: "pointer" }}
-                      title={areaFilter === job.area ? "Clear area filter" : `Filter by ${job.area}`}
+                      title={areaFilter === job.area ? "Clear industry filter" : `Filter by ${job.area}`}
                     >
                       {job.area}
                     </button>
@@ -646,28 +635,12 @@ const HERO_CONTENT = {
 };
 
 export default function App() {
-  const emitDebugLog = (payload) => {
-    fetch("http://127.0.0.1:7309/ingest/fe96e307-e1a3-4402-b8ad-2a09e116eb05", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "dcb22e",
-      },
-      body: JSON.stringify({
-        sessionId: "dcb22e",
-        runId: "post-fix-1",
-        timestamp: Date.now(),
-        ...payload,
-      }),
-    }).catch(() => {});
-  };
   const [tab, setTab] = useState("jobs");
   const [search, setSearch] = useState("");
   const [areaFilter, setAreaFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const stickyRef = useRef(null);
-  const lastLoggedBucketRef = useRef(-1);
   const hero = HERO_CONTENT[tab];
   const {
     jobs,
@@ -703,48 +676,18 @@ export default function App() {
     [jobs],
   );
 
-  useEffect(() => {
-    const onScroll = () => {
-      const y = window.scrollY;
-      if (y > 180) return;
-      const bucket = Math.floor(y / 20);
-      if (bucket === lastLoggedBucketRef.current) return;
-      lastLoggedBucketRef.current = bucket;
-      // #region agent log
-      emitDebugLog({
-        hypothesisId: "H5",
-        location: "src/App.jsx:onScrollProbe",
-        message: "Scroll probe sample",
-        data: { y, bucket },
-      });
-      // #endregion
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   // Keep --sticky-h in sync with the sticky wrapper's real height
   useEffect(() => {
     const el = stickyRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
-      // #region agent log
-      emitDebugLog({
-        hypothesisId: "H2",
-        location: "src/App.jsx:ResizeObserver",
-        message: "Sticky header resized",
-        data: {
-          offsetHeight: el.offsetHeight,
-          scrollY: window.scrollY,
-        },
-      });
-      // #endregion
-      document.documentElement.style.setProperty("--sticky-h", el.offsetHeight + "px");
-    });
+    const syncStickyHeight = () => {
+      document.documentElement.style.setProperty("--sticky-h", `${el.offsetHeight}px`);
+    };
+    syncStickyHeight();
+    const ro = new ResizeObserver(syncStickyHeight);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [tab]);
 
   return (
     <div style={{ minHeight: "100vh", background: "#fff", fontFamily: "'Georgia', serif", color: "#1a1a1a" }}>

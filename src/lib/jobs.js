@@ -136,7 +136,7 @@ export function makeJob({
     logo: faviconUrl(domain),
     role: role.trim(),
     location: (location || "Remote").trim(),
-    area: area || "Design",
+    area: area || "Other",
     url,
     postedAt: postedAt || new Date().toISOString(),
     postedDays,
@@ -211,7 +211,7 @@ export function normalizeBuiltinJob({ company, domain, role, location, area, url
     domain: domain || `${company.toLowerCase().replace(/\s+/g, "")}.com`,
     role,
     location,
-    area: area || "Design",
+    area: area || "Other",
     url,
     postedAt,
     source: "builtin",
@@ -313,6 +313,123 @@ export function getAreas(jobs) {
 
 export function getCompanies(jobs) {
   return [...new Set(jobs.map((j) => j.company))].sort();
+}
+
+/** Role/function labels incorrectly used as company industry. */
+const INVALID_COMPANY_AREAS = new Set(["Design", ""]);
+
+const COMPANY_KEY_ALIASES = {
+  anysphere: "cursor",
+  "scale ai": "scale ai",
+  scaleai: "scale ai",
+  "character ai": "character ai",
+  character: "character ai",
+  "weights and biases": "weights & biases",
+  wandb: "weights & biases",
+  "mistral ai": "mistral ai",
+  mistral: "mistral ai",
+  "together ai": "together ai",
+  together: "together ai",
+  "luma ai": "luma ai",
+  lumaai: "luma ai",
+  "eleven labs": "elevenlabs",
+  "the browser company": "arc",
+  browser: "arc",
+};
+
+const INDUSTRY_HEURISTICS = [
+  { area: "Fintech", pattern: /\b(bank|banks|pay|payment|finance|financial|capital|credit|lend|lending|wallet|trading|crypto|defi|insur|fintech|mortgage|brokerage)\b/i },
+  { area: "Healthtech", pattern: /\b(health|healthcare|medical|clinic|pharma|therap|wellness|patient|care|biotech|life science|genomics|benchling)\b/i },
+  { area: "AI Research", pattern: /\b(ai|artificial intelligence|ml|machine learning|llm|openai|anthropic|deepmind|research lab)\b/i },
+  { area: "Developer Tools", pattern: /\b(developer|devtools|dev tools|infrastructure|infra|cloud|saas platform|api platform)\b/i },
+  { area: "Design Tools", pattern: /\b(design tool|figma|creative suite|ux platform)\b/i },
+  { area: "Productivity", pattern: /\b(productivity|workspace|docs|document|notion|collaboration)\b/i },
+  { area: "Enterprise AI", pattern: /\b(enterprise|b2b|workflow automation|sales platform|crm)\b/i },
+  { area: "Consumer App", pattern: /\b(consumer|social|dating|gaming|media|streaming|marketplace|ecommerce|e-commerce|retail)\b/i },
+  { area: "Legal AI", pattern: /\b(legal|law|compliance|contract)\b/i },
+  { area: "Generative AI", pattern: /\b(generative|gen ai|image gen|video gen|voice ai)\b/i },
+];
+
+/**
+ * @param {string} company
+ */
+export function normalizeCompanyName(company) {
+  return (company || "").replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * @param {string} company
+ */
+export function normalizeCompanyKey(company) {
+  return normalizeCompanyName(company).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * @param {import('./jobs.js').JobSource[]} sources
+ * @param {import('./jobs.js').Job[]} [jobs]
+ */
+export function buildCompanyAreaLookup(sources, jobs = []) {
+  const lookup = new Map();
+
+  for (const src of sources) {
+    lookup.set(normalizeCompanyKey(src.company), src.area);
+    const brand = src.domain?.split(".")[0];
+    if (brand) lookup.set(normalizeCompanyKey(brand), src.area);
+  }
+
+  for (const job of jobs) {
+    if (!job.area || INVALID_COMPANY_AREAS.has(job.area)) continue;
+    if (job.source === "builtin") continue;
+    const key = normalizeCompanyKey(job.company);
+    if (!lookup.has(key)) lookup.set(key, job.area);
+  }
+
+  for (const [alias, canonical] of Object.entries(COMPANY_KEY_ALIASES)) {
+    const canonicalArea = lookup.get(canonical);
+    if (canonicalArea) lookup.set(alias, canonicalArea);
+  }
+
+  return lookup;
+}
+
+/**
+ * @param {string} company
+ */
+export function inferCompanyAreaFromHeuristics(company) {
+  const text = normalizeCompanyName(company);
+  for (const { area, pattern } of INDUSTRY_HEURISTICS) {
+    if (pattern.test(text)) return area;
+  }
+  return "Other";
+}
+
+/**
+ * @param {string} company
+ * @param {Map<string, string>} lookup
+ */
+export function resolveCompanyArea(company, lookup) {
+  const key = normalizeCompanyKey(company);
+  const aliasKey = COMPANY_KEY_ALIASES[key];
+  if (aliasKey && lookup.has(aliasKey)) return lookup.get(aliasKey);
+  if (lookup.has(key)) return lookup.get(key);
+
+  for (const [knownKey, area] of lookup) {
+    if (key.includes(knownKey) || knownKey.includes(key)) return area;
+  }
+
+  return inferCompanyAreaFromHeuristics(company);
+}
+
+/**
+ * @param {import('./jobs.js').Job[]} jobs
+ * @param {import('./jobs.js').JobSource[]} sources
+ */
+export function applyCompanyAreas(jobs, sources) {
+  const lookup = buildCompanyAreaLookup(sources, jobs);
+  return jobs.map((job) => ({
+    ...job,
+    area: resolveCompanyArea(job.company, lookup),
+  }));
 }
 
 const LOCATION_SYNONYMS = {

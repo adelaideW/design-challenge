@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "sync-jobs": "node scripts/sync-jobs.mjs",
+    "patch-job-areas": "node scripts/patch-job-areas.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

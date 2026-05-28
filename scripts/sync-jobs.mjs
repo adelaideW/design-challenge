@@ -8,10 +8,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import {
+  applyCompanyAreas,
   dedupeJobs,
   fetchJobsForSource,
   isDesignRole,
   normalizeBuiltinJob,
+  resolveCompanyArea,
+  buildCompanyAreaLookup,
   sortJobs,
 } from "../src/lib/jobs.js";
 
@@ -134,7 +137,8 @@ function parseBuiltinPosted(text) {
   return now.toISOString();
 }
 
-async function fetchBuiltinJobs() {
+async function fetchBuiltinJobs(sources) {
+  const areaLookup = buildCompanyAreaLookup(sources);
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   const collected = [];
@@ -211,7 +215,7 @@ async function fetchBuiltinJobs() {
           domain,
           role: row.title,
           location: row.location || "San Francisco, CA, USA",
-          area: "Design",
+          area: resolveCompanyArea(company, areaLookup),
           url: row.url,
           postedAt: parseBuiltinPosted(row.postedText),
         });
@@ -265,7 +269,7 @@ async function main() {
 
   let builtinJobs = [];
   try {
-    builtinJobs = await fetchBuiltinJobs();
+    builtinJobs = await fetchBuiltinJobs(sources);
     console.log(`Built In: ${builtinJobs.length} design roles`);
   } catch (err) {
     console.warn("Built In scrape failed:", err.message);
@@ -273,9 +277,10 @@ async function main() {
   }
 
   const merged = dedupeJobs([...atsJobs, ...builtinJobs]);
-  console.log(`Merged: ${merged.length} unique roles — verifying URLs…`);
+  const withCompanyAreas = applyCompanyAreas(merged, sources);
+  console.log(`Merged: ${withCompanyAreas.length} unique roles — verifying URLs…`);
 
-  const { verified, dropped } = await filterVerified(merged);
+  const { verified, dropped } = await filterVerified(withCompanyAreas);
   const sorted = sortJobs(verified);
 
   await fs.mkdir(path.dirname(OUT_JOBS), { recursive: true });
