@@ -12,8 +12,6 @@ export function useJobs() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [totalCount, setTotalCount] = useState(0);
-  const [pageCount, setPageCount] = useState(1);
-  const [nextPage, setNextPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState(null);
   const loadingPageRef = useRef(false);
@@ -45,7 +43,6 @@ export function useJobs() {
       const moreAvailable = upcoming <= pageCountRef.current;
       nextPageRef.current = upcoming;
       hasMoreRef.current = moreAvailable;
-      setNextPage(upcoming);
       setHasMore(moreAvailable);
       return moreAvailable;
     } catch (err) {
@@ -61,7 +58,6 @@ export function useJobs() {
     for (let i = 0; i < 200; i++) {
       if (typeof shouldContinue === "function" && !shouldContinue()) break;
       if (!hasMoreRef.current) break;
-      // eslint-disable-next-line no-await-in-loop
       const keepGoing = await loadMore();
       if (!keepGoing) break;
     }
@@ -78,12 +74,10 @@ export function useJobs() {
         const meta = await metaRes.json();
         if (cancelled) return;
         setTotalCount(meta.totalCount || 0);
-        setPageCount(meta.pageCount || 1);
         setLastSyncedAt(meta.generatedAt ? new Date(meta.generatedAt) : null);
         pageCountRef.current = meta.pageCount || 1;
         nextPageRef.current = 1;
         hasMoreRef.current = (meta.pageCount || 1) >= 1;
-        setNextPage(1);
         setHasMore((meta.pageCount || 1) >= 1);
       } catch (err) {
         if (!cancelled) setError(err?.message || "Could not load jobs metadata");

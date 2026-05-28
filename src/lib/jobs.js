@@ -314,3 +314,56 @@ export function getAreas(jobs) {
 export function getCompanies(jobs) {
   return [...new Set(jobs.map((j) => j.company))].sort();
 }
+
+const LOCATION_SYNONYMS = {
+  ca: ["california"],
+  california: ["ca"],
+  sf: ["san", "francisco"],
+  usa: ["us", "united", "states"],
+  us: ["usa", "united", "states"],
+};
+
+const LOCATION_NOISE_TOKENS = new Set(["usa", "us", "united", "states"]);
+
+/**
+ * @param {string} value
+ */
+export function normalizeLocationText(value) {
+  return (value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * @param {string} value
+ */
+export function buildLocationMatchText(value) {
+  const normalized = normalizeLocationText(value);
+  if (!normalized) return "";
+  const tokens = normalized.split(" ").filter(Boolean);
+  const expanded = new Set();
+  for (const token of tokens) {
+    if (!LOCATION_NOISE_TOKENS.has(token)) expanded.add(token);
+    const aliases = LOCATION_SYNONYMS[token] || [];
+    for (const alias of aliases) {
+      if (!LOCATION_NOISE_TOKENS.has(alias)) expanded.add(alias);
+    }
+  }
+  return [...expanded].join(" ");
+}
+
+/**
+ * @param {string} candidate
+ * @param {string} selected
+ */
+export function locationMatches(candidate, selected) {
+  if (!selected) return true;
+  const candidateText = buildLocationMatchText(candidate);
+  const selectedText = buildLocationMatchText(selected);
+  if (!candidateText || !selectedText) return false;
+  const candidateTokens = new Set(candidateText.split(" ").filter(Boolean));
+  const selectedTokens = selectedText.split(" ").filter(Boolean);
+  return selectedTokens.every((token) => candidateTokens.has(token));
+}

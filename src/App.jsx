@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useJobs } from "./hooks/useJobs.js";
 import { getInterviewReply, INTERVIEW_SYSTEM_PROMPT } from "./lib/interviewApi.js";
+import { locationMatches } from "./lib/jobs.js";
 
 // ─── MOCK INTERVIEW ──────────────────────────────────────────────────────────
 
@@ -185,7 +186,13 @@ const GLOBAL_CSS = `
     font-size: 10px; letter-spacing: 1px; color: #777; text-transform: uppercase;
   }
 
-  .jobs-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .jobs-table { width: 100%; border-collapse: collapse; margin-top: 4px; table-layout: fixed; }
+  .jobs-table col.col-company { width: 20%; }
+  .jobs-table col.col-role { width: 28%; }
+  .jobs-table col.col-area { width: 14%; }
+  .jobs-table col.col-location { width: 20%; }
+  .jobs-table col.col-posted { width: 10%; }
+  .jobs-table col.col-apply { width: 8%; }
   .jobs-table th {
     font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 2px;
     text-transform: uppercase; color: #555; font-weight: 400;
@@ -197,11 +204,31 @@ const GLOBAL_CSS = `
     padding: 14px 16px 14px 0; border-bottom: 1px solid #eee;
     font-size: 13px; vertical-align: middle;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #222;
+    height: 58px;
   }
   .jobs-table td:last-child { text-align: right; padding-right: 0; }
   .jobs-table tr:hover td { background: #fafafa; }
+  .jobs-cell-center { vertical-align: middle; }
+  .jobs-cell-right { text-align: right; }
 
-  .company-cell { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+  .jobs-cell-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.35;
+    max-height: calc(1.35em * 2);
+    word-break: break-word;
+  }
+  .company-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: calc(1.35em * 2);
+  }
+  .company-cell .company-name.jobs-cell-clamp {
+    white-space: normal;
+  }
   .company-logo { width: 20px; height: 20px; border-radius: 4px; object-fit: contain; border: 1px solid #eee; flex-shrink: 0; }
   .company-name {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px;
@@ -209,11 +236,24 @@ const GLOBAL_CSS = `
   }
   .company-name:hover { border-bottom-color: #111; }
   .company-name.filtered { border-bottom-color: #111; font-weight: bold; }
+  .location-text {
+    color: #666;
+    cursor: pointer;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s;
+  }
+  .location-text.filtered {
+    border-bottom-color: #111;
+    font-weight: 600;
+    color: #333;
+  }
 
   .area-badge {
     display: inline-block; font-family: 'Courier New', monospace; font-size: 10px;
     letter-spacing: 0.5px; color: #444; background: #f4f4f4;
     border-radius: 20px; padding: 3px 10px; white-space: nowrap;
+    height: 22px;
+    line-height: 16px;
   }
   .area-badge.filtered {
     background: #111;
@@ -241,9 +281,9 @@ function formatSyncTime(date) {
 
 function JobsControls({
   search, setSearch, areaFilter, setAreaFilter, companyFilter, setCompanyFilter,
-  count, totalCount, areas, companies, loading, lastSyncedAt, syncError,
+  locationFilter, setLocationFilter, count, totalCount, areas, companies, locations, loading, lastSyncedAt, syncError,
 }) {
-  const hasFilters = search || areaFilter || companyFilter;
+  const hasFilters = search || areaFilter || companyFilter || locationFilter;
   const syncLabel = loading
     ? "Refreshing listings…"
     : lastSyncedAt
@@ -266,8 +306,12 @@ function JobsControls({
         <option value="">All companies</option>
         {companies.map(c => <option key={c} value={c}>{c}</option>)}
       </select>
+      <select className="filter-select" value={locationFilter} onChange={e => setLocationFilter(e.target.value)}>
+        <option value="">All locations</option>
+        {locations.map(l => <option key={l} value={l}>{l}</option>)}
+      </select>
       {hasFilters && (
-        <button className="clear-btn" onClick={() => { setSearch(""); setAreaFilter(""); setCompanyFilter(""); }}>
+        <button className="clear-btn" onClick={() => { setSearch(""); setAreaFilter(""); setCompanyFilter(""); setLocationFilter(""); }}>
           Clear ×
         </button>
       )}
@@ -294,9 +338,10 @@ function JobsTab({
   setAreaFilter,
   companyFilter,
   setCompanyFilter,
+  locationFilter,
+  setLocationFilter,
   hasMore,
   loadingMore,
-  isFilterLoading,
   onLoadMore,
 }) {
   const [sortCol, setSortCol] = useState("Posted");   // default: sort by Posted (newest first)
@@ -317,7 +362,8 @@ function JobsTab({
     );
     const matchArea = !areaFilter || j.area === areaFilter;
     const matchCompany = !companyFilter || j.company === companyFilter;
-    return matchSearch && matchArea && matchCompany;
+    const matchLocation = locationMatches(j.location, locationFilter);
+    return matchSearch && matchArea && matchCompany && matchLocation;
   });
 
   const sorted = sortCol ? [...filtered].sort((a, b) => {
@@ -341,6 +387,9 @@ function JobsTab({
   const handleAreaClick = (area) => {
     setAreaFilter(prev => prev === area ? "" : area);
   };
+  const handleLocationClick = (location) => {
+    setLocationFilter((prev) => (prev && locationMatches(location, prev) && locationMatches(prev, location) ? "" : location));
+  };
 
   const SortIcon = ({ col }) => {
     if (!SORT_KEYS[col]) return null;
@@ -357,7 +406,6 @@ function JobsTab({
       if (
         entry.isIntersecting &&
         !loadingMore &&
-        !isFilterLoading &&
         now - lastObserverTriggerRef.current > cooldownMs
       ) {
         lastObserverTriggerRef.current = now;
@@ -366,7 +414,7 @@ function JobsTab({
     }, { rootMargin: "300px 0px" });
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
-  }, [hasMore, loadingMore, isFilterLoading, onLoadMore]);
+  }, [hasMore, loadingMore, onLoadMore]);
 
   return (
     <div className="main-content">
@@ -376,6 +424,14 @@ function JobsTab({
         <>
           <div ref={tableTopRef} />
           <table className="jobs-table">
+            <colgroup>
+              <col className="col-company" />
+              <col className="col-role" />
+              <col className="col-area" />
+              <col className="col-location" />
+              <col className="col-posted" />
+              <col className="col-apply" />
+            </colgroup>
             <thead>
               <tr>
                 {["Company", "Role", "Area", "Location", "Posted", "Apply"].map(col => (
@@ -396,7 +452,7 @@ function JobsTab({
                     <div className="company-cell">
                       <img className="company-logo" src={job.logo} alt={job.company} onError={e => { e.target.style.display = "none"; }} />
                       <span
-                        className={`company-name ${companyFilter === job.company ? "filtered" : ""}`}
+                        className={`company-name jobs-cell-clamp ${companyFilter === job.company ? "filtered" : ""}`}
                         onClick={() => handleCompanyClick(job.company)}
                         title={companyFilter === job.company ? "Click to clear filter" : `Filter by ${job.company}`}
                       >
@@ -404,8 +460,8 @@ function JobsTab({
                       </span>
                     </div>
                   </td>
-                  <td>{job.role}</td>
-                  <td>
+                  <td><div className="jobs-cell-clamp">{job.role}</div></td>
+                  <td className="jobs-cell-center">
                     <button
                       type="button"
                       className={`area-badge ${areaFilter === job.area ? "filtered" : ""}`}
@@ -416,9 +472,17 @@ function JobsTab({
                       {job.area}
                     </button>
                   </td>
-                  <td style={{ color: "#666" }}>{job.location}</td>
-                  <td><span className="posted-text">{formatPosted(job.postedDays)}</span></td>
                   <td>
+                    <div
+                      className={`jobs-cell-clamp location-text ${locationFilter && locationMatches(job.location, locationFilter) ? "filtered" : ""}`}
+                      onClick={() => handleLocationClick(job.location)}
+                      title={locationFilter && locationMatches(job.location, locationFilter) ? "Clear location filter" : `Filter by ${job.location}`}
+                    >
+                      {job.location}
+                    </div>
+                  </td>
+                  <td className="jobs-cell-center"><span className="posted-text">{formatPosted(job.postedDays)}</span></td>
+                  <td className="jobs-cell-right jobs-cell-center">
                     <a className="apply-link" href={job.url} target="_blank" rel="noopener noreferrer">Apply ↗</a>
                   </td>
                 </tr>
@@ -428,11 +492,7 @@ function JobsTab({
           {hasMore && (
             <div ref={sentinelRef} style={{ padding: "14px 0", textAlign: "center" }}>
               <span className="posted-text">
-                {isFilterLoading
-                  ? "Applying filters…"
-                  : loadingMore
-                    ? "Loading more roles…"
-                    : "Scroll to load more"}
+                {loadingMore ? "Loading more roles…" : "Scroll to load more"}
               </span>
             </div>
           )}
@@ -591,9 +651,8 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [areaFilter, setAreaFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
-  const [isFilterLoading, setIsFilterLoading] = useState(false);
+  const [locationFilter, setLocationFilter] = useState("");
   const stickyRef = useRef(null);
-  const filterLoadRunRef = useRef(0);
   const hero = HERO_CONTENT[tab];
   const {
     jobs,
@@ -606,7 +665,6 @@ export default function App() {
     areas,
     companies,
     loadMore,
-    ensureAllLoaded,
     formatPosted,
   } = useJobs();
 
@@ -620,37 +678,15 @@ export default function App() {
         j.location.toLowerCase().includes(kw)
       ) &&
       (!areaFilter || j.area === areaFilter) &&
-      (!companyFilter || j.company === companyFilter)
+      (!companyFilter || j.company === companyFilter) &&
+      locationMatches(j.location, locationFilter)
     ).length;
-  }, [jobs, search, areaFilter, companyFilter]);
+  }, [jobs, search, areaFilter, companyFilter, locationFilter]);
 
-  useEffect(() => {
-    const hasActiveFilter = Boolean(search || areaFilter || companyFilter);
-    filterLoadRunRef.current += 1;
-    const runId = filterLoadRunRef.current;
-
-    if (!hasActiveFilter || !hasMore) {
-      setIsFilterLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setIsFilterLoading(true);
-    void ensureAllLoaded({
-      shouldContinue: () =>
-        !cancelled &&
-        runId === filterLoadRunRef.current &&
-        Boolean(search || areaFilter || companyFilter),
-    }).finally(() => {
-      if (!cancelled && runId === filterLoadRunRef.current) {
-        setIsFilterLoading(false);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [search, areaFilter, companyFilter, hasMore, ensureAllLoaded]);
+  const locations = useMemo(
+    () => [...new Set(jobs.map((j) => j.location).filter(Boolean))].sort(),
+    [jobs],
+  );
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -701,10 +737,12 @@ export default function App() {
             search={search} setSearch={setSearch}
             areaFilter={areaFilter} setAreaFilter={setAreaFilter}
             companyFilter={companyFilter} setCompanyFilter={setCompanyFilter}
+            locationFilter={locationFilter} setLocationFilter={setLocationFilter}
             count={filteredCount}
             totalCount={totalCount}
             areas={areas}
             companies={companies}
+            locations={locations}
             loading={loading}
             lastSyncedAt={lastSyncedAt}
             syncError={syncError}
@@ -723,9 +761,10 @@ export default function App() {
             setAreaFilter={setAreaFilter}
             companyFilter={companyFilter}
             setCompanyFilter={setCompanyFilter}
+            locationFilter={locationFilter}
+            setLocationFilter={setLocationFilter}
             hasMore={hasMore}
             loadingMore={loadingMore}
-            isFilterLoading={isFilterLoading}
             onLoadMore={loadMore}
           />
         )
