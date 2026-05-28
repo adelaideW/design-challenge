@@ -653,6 +653,7 @@ export default function App() {
   const [companyFilter, setCompanyFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const stickyRef = useRef(null);
+  const scrolledRef = useRef(false);
   const hero = HERO_CONTENT[tab];
   const {
     jobs,
@@ -689,7 +690,19 @@ export default function App() {
   );
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40);
+    const compactOnAt = 56;
+    const compactOffAt = 24;
+    const onScroll = () => {
+      const y = window.scrollY;
+      const nextScrolled = scrolledRef.current
+        ? y > compactOffAt
+        : y > compactOnAt;
+      if (nextScrolled !== scrolledRef.current) {
+        scrolledRef.current = nextScrolled;
+        setScrolled(nextScrolled);
+      }
+    };
+    onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
