@@ -27,7 +27,7 @@ const BUILTIN_URL =
   "https://www.builtinsf.com/jobs/remote/hybrid/office?search=product+designer&city=San+Francisco&state=California&country=USA&allLocations=true";
 
 const VERIFY_TIMEOUT_MS = 12_000;
-const MAX_BUILTIN_PAGES = 3;
+const MAX_BUILTIN_PAGES = 20;
 
 async function loadSources() {
   const raw = await fs.readFile(SOURCES_PATH, "utf8");
@@ -139,13 +139,13 @@ async function fetchBuiltinJobs() {
   const collected = [];
 
   try {
-    await page.goto(BUILTIN_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    await page.waitForTimeout(2500);
-
     for (let pageNum = 0; pageNum < MAX_BUILTIN_PAGES; pageNum++) {
+      const pageUrl = `${BUILTIN_URL}&page=${pageNum + 1}`;
+      await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await page.waitForTimeout(1200);
+
       const batch = await page.evaluate(() => {
         const results = [];
-        const cards = document.querySelectorAll('[data-id="job-card"], .job-brief, article');
         const links = document.querySelectorAll('a[href*="/job/"]');
 
         const seen = new Set();
@@ -217,12 +217,8 @@ async function fetchBuiltinJobs() {
         if (job) collected.push(job);
       }
 
-      const nextBtn = page.locator('a[rel="next"], button:has-text("Next")').first();
-      if ((await nextBtn.count()) === 0) break;
-      const disabled = await nextBtn.isDisabled().catch(() => true);
-      if (disabled) break;
-      await nextBtn.click();
-      await page.waitForTimeout(2000);
+      // Stop early when listing pages run out of job links.
+      if (batch.length < 10) break;
     }
   } finally {
     await browser.close();
