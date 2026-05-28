@@ -646,14 +646,28 @@ const HERO_CONTENT = {
 };
 
 export default function App() {
+  const emitDebugLog = (payload) => {
+    fetch("http://127.0.0.1:7309/ingest/fe96e307-e1a3-4402-b8ad-2a09e116eb05", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "dcb22e",
+      },
+      body: JSON.stringify({
+        sessionId: "dcb22e",
+        runId: "post-fix-1",
+        timestamp: Date.now(),
+        ...payload,
+      }),
+    }).catch(() => {});
+  };
   const [tab, setTab] = useState("jobs");
-  const [scrolled, setScrolled] = useState(false);
   const [search, setSearch] = useState("");
   const [areaFilter, setAreaFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const stickyRef = useRef(null);
-  const scrolledRef = useRef(false);
+  const lastLoggedBucketRef = useRef(-1);
   const hero = HERO_CONTENT[tab];
   const {
     jobs,
@@ -690,52 +704,56 @@ export default function App() {
   );
 
   useEffect(() => {
-    const compactOnAt = 56;
-    const compactOffAt = 24;
     const onScroll = () => {
       const y = window.scrollY;
-      const nextScrolled = scrolledRef.current
-        ? y > compactOffAt
-        : y > compactOnAt;
-      if (nextScrolled !== scrolledRef.current) {
-        scrolledRef.current = nextScrolled;
-        setScrolled(nextScrolled);
-      }
+      if (y > 180) return;
+      const bucket = Math.floor(y / 20);
+      if (bucket === lastLoggedBucketRef.current) return;
+      lastLoggedBucketRef.current = bucket;
+      // #region agent log
+      emitDebugLog({
+        hypothesisId: "H5",
+        location: "src/App.jsx:onScrollProbe",
+        message: "Scroll probe sample",
+        data: { y, bucket },
+      });
+      // #endregion
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Keep --sticky-h synced at stable UI boundaries (avoid per-frame transition jitter).
+  // Keep --sticky-h in sync with the sticky wrapper's real height
   useEffect(() => {
     const el = stickyRef.current;
     if (!el) return;
-    let raf1 = 0;
-    let raf2 = 0;
-    const syncStickyHeight = () => {
-      raf1 = window.requestAnimationFrame(() => {
-        raf2 = window.requestAnimationFrame(() => {
-          document.documentElement.style.setProperty("--sticky-h", `${el.offsetHeight}px`);
-        });
+    const ro = new ResizeObserver(() => {
+      // #region agent log
+      emitDebugLog({
+        hypothesisId: "H2",
+        location: "src/App.jsx:ResizeObserver",
+        message: "Sticky header resized",
+        data: {
+          offsetHeight: el.offsetHeight,
+          scrollY: window.scrollY,
+        },
       });
-    };
-    syncStickyHeight();
-    return () => {
-      if (raf1) window.cancelAnimationFrame(raf1);
-      if (raf2) window.cancelAnimationFrame(raf2);
-    };
-  }, [scrolled, tab]);
+      // #endregion
+      document.documentElement.style.setProperty("--sticky-h", el.offsetHeight + "px");
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   return (
     <div style={{ minHeight: "100vh", background: "#fff", fontFamily: "'Georgia', serif", color: "#1a1a1a" }}>
       <style>{GLOBAL_CSS}</style>
 
       {/* Sticky header wrapper: hero + tabs + (jobs controls) */}
-      <div ref={stickyRef} className={`sticky-header${scrolled ? " scrolled" : ""}`}>
+      <div ref={stickyRef} className="sticky-header">
         {/* Hero */}
-        <div className={`ascii-hero${scrolled ? " compact" : ""}`}>
-          {tab === "interview" && <div className="ascii-bg">{ASCII_GRID}</div>}
+        <div className="ascii-hero">
           <div className="hero-content">
             <div className="hero-label">{hero.label}</div>
             <h1 className="hero-title">{hero.title}</h1>
