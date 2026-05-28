@@ -11,7 +11,6 @@ import {
   dedupeJobs,
   fetchJobsForSource,
   isDesignRole,
-  makeJob,
   normalizeBuiltinJob,
   sortJobs,
 } from "../src/lib/jobs.js";
@@ -22,6 +21,8 @@ const SOURCES_PATH = path.join(__dirname, "job-sources.json");
 const OUT_JOBS = path.join(ROOT, "src/data/jobs.json");
 const OUT_META = path.join(ROOT, "src/data/jobs-meta.json");
 const OUT_REPORT = path.join(__dirname, "sync-jobs-report.json");
+const OUT_PUBLIC_DIR = path.join(ROOT, "public/data/jobs");
+const PAGE_SIZE = 50;
 
 const BUILTIN_URL =
   "https://www.builtinsf.com/jobs/remote/hybrid/office?search=product+designer&city=San+Francisco&state=California&country=USA&allLocations=true";
@@ -280,6 +281,16 @@ async function main() {
   await fs.mkdir(path.dirname(OUT_JOBS), { recursive: true });
   await fs.writeFile(OUT_JOBS, JSON.stringify(sorted, null, 2) + "\n");
 
+  await fs.mkdir(OUT_PUBLIC_DIR, { recursive: true });
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  for (let i = 0; i < pageCount; i++) {
+    const page = sorted.slice(i * PAGE_SIZE, (i + 1) * PAGE_SIZE);
+    await fs.writeFile(
+      path.join(OUT_PUBLIC_DIR, `page-${i + 1}.json`),
+      JSON.stringify(page, null, 2) + "\n",
+    );
+  }
+
   const meta = {
     generatedAt: new Date().toISOString(),
     counts: {
@@ -292,6 +303,15 @@ async function main() {
     sources: sources.length,
   };
   await fs.writeFile(OUT_META, JSON.stringify(meta, null, 2) + "\n");
+  await fs.writeFile(
+    path.join(OUT_PUBLIC_DIR, "meta.json"),
+    JSON.stringify({
+      generatedAt: meta.generatedAt,
+      totalCount: sorted.length,
+      pageSize: PAGE_SIZE,
+      pageCount,
+    }, null, 2) + "\n",
+  );
 
   const report = {
     generatedAt: meta.generatedAt,

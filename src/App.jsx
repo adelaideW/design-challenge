@@ -237,7 +237,7 @@ function formatSyncTime(date) {
 
 function JobsControls({
   search, setSearch, areaFilter, setAreaFilter, companyFilter, setCompanyFilter,
-  count, areas, companies, loading, lastSyncedAt, syncError,
+  count, totalCount, areas, companies, loading, lastSyncedAt, syncError,
 }) {
   const hasFilters = search || areaFilter || companyFilter;
   const syncLabel = loading
@@ -267,7 +267,9 @@ function JobsControls({
           Clear ×
         </button>
       )}
-      <span className="jobs-count">{count} role{count !== 1 ? "s" : ""}</span>
+      <span className="jobs-count">
+        {count} shown · {totalCount || count} total
+      </span>
       <span style={{ fontFamily: "'Courier New', monospace", fontSize: 10, color: "#888", letterSpacing: "0.5px" }}>
         {syncLabel}
         {syncError && !loading ? " · using cache" : ""}
@@ -280,11 +282,21 @@ function JobsControls({
 
 const SORT_KEYS = { Company: "company", Role: "role", Area: "area", Location: "location", Posted: "postedDays" };
 
-function JobsTab({ jobs, formatPosted, search, areaFilter, companyFilter, setCompanyFilter }) {
+function JobsTab({
+  jobs,
+  formatPosted,
+  search,
+  areaFilter,
+  setAreaFilter,
+  companyFilter,
+  setCompanyFilter,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+}) {
   const [sortCol, setSortCol] = useState("Posted");   // default: sort by Posted (newest first)
   const [sortDir, setSortDir] = useState("asc");
-  const [page, setPage] = useState(1);
-  const PAGE_SIZE = 50;
+  const sentinelRef = useRef(null);
 
   // Multi-keyword search: split on whitespace, every keyword must match
   const keywords = search.toLowerCase().split(/\s+/).filter(Boolean);
@@ -310,10 +322,6 @@ function JobsTab({ jobs, formatPosted, search, areaFilter, companyFilter, setCom
     return 0;
   }) : filtered;
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, areaFilter, companyFilter, sortCol, sortDir]);
-
   const handleSort = (col) => {
     if (!SORT_KEYS[col]) return; // Apply column not sortable
     if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -323,6 +331,9 @@ function JobsTab({ jobs, formatPosted, search, areaFilter, companyFilter, setCom
   const handleCompanyClick = (company) => {
     setCompanyFilter(prev => prev === company ? "" : company);
   };
+  const handleAreaClick = (area) => {
+    setAreaFilter(prev => prev === area ? "" : area);
+  };
 
   const SortIcon = ({ col }) => {
     if (!SORT_KEYS[col]) return null;
@@ -330,10 +341,17 @@ function JobsTab({ jobs, formatPosted, search, areaFilter, companyFilter, setCom
     return <span style={{ color: "#111", marginLeft: 4, fontSize: 9 }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
   };
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const clampedPage = Math.min(page, totalPages);
-  const start = (clampedPage - 1) * PAGE_SIZE;
-  const pageRows = sorted.slice(start, start + PAGE_SIZE);
+  useEffect(() => {
+    if (!hasMore || !sentinelRef.current) return;
+    const observer = new IntersectionObserver((entries) => {
+      const [entry] = entries;
+      if (entry.isIntersecting && !loadingMore) {
+        onLoadMore();
+      }
+    }, { rootMargin: "300px 0px" });
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, onLoadMore]);
 
   return (
     <div className="main-content">
@@ -341,18 +359,6 @@ function JobsTab({ jobs, formatPosted, search, areaFilter, companyFilter, setCom
         <div className="no-results">No roles found</div>
       ) : (
         <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 6px" }}>
-            <span className="posted-text">
-              Showing {start + 1}-{Math.min(start + PAGE_SIZE, sorted.length)} of {sorted.length}
-            </span>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button className="clear-btn" onClick={() => setPage(1)} disabled={clampedPage === 1}>First</button>
-              <button className="clear-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={clampedPage === 1}>Prev</button>
-              <span className="posted-text">Page {clampedPage} / {totalPages}</span>
-              <button className="clear-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={clampedPage === totalPages}>Next</button>
-              <button className="clear-btn" onClick={() => setPage(totalPages)} disabled={clampedPage === totalPages}>Last</button>
-            </div>
-          </div>
           <table className="jobs-table">
             <thead>
               <tr>
@@ -368,7 +374,7 @@ function JobsTab({ jobs, formatPosted, search, areaFilter, companyFilter, setCom
               </tr>
             </thead>
             <tbody>
-              {pageRows.map(job => (
+              {sorted.map(job => (
                 <tr key={job.id}>
                   <td>
                     <div className="company-cell">
@@ -383,7 +389,17 @@ function JobsTab({ jobs, formatPosted, search, areaFilter, companyFilter, setCom
                     </div>
                   </td>
                   <td>{job.role}</td>
-                  <td><span className="area-badge">{job.area}</span></td>
+                  <td>
+                    <button
+                      type="button"
+                      className="area-badge"
+                      onClick={() => handleAreaClick(job.area)}
+                      style={{ border: 0, cursor: "pointer" }}
+                      title={areaFilter === job.area ? "Clear area filter" : `Filter by ${job.area}`}
+                    >
+                      {job.area}
+                    </button>
+                  </td>
                   <td style={{ color: "#666" }}>{job.location}</td>
                   <td><span className="posted-text">{formatPosted(job.postedDays)}</span></td>
                   <td>
@@ -393,6 +409,11 @@ function JobsTab({ jobs, formatPosted, search, areaFilter, companyFilter, setCom
               ))}
             </tbody>
           </table>
+          {hasMore && (
+            <div ref={sentinelRef} style={{ padding: "14px 0", textAlign: "center" }}>
+              <span className="posted-text">{loadingMore ? "Loading more roles…" : "Scroll to load more"}</span>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -546,7 +567,20 @@ export default function App() {
   const [companyFilter, setCompanyFilter] = useState("");
   const stickyRef = useRef(null);
   const hero = HERO_CONTENT[tab];
-  const { jobs, loading, lastSyncedAt, error: syncError, areas, companies, formatPosted } = useJobs();
+  const {
+    jobs,
+    loading,
+    loadingMore,
+    lastSyncedAt,
+    totalCount,
+    hasMore,
+    error: syncError,
+    areas,
+    companies,
+    loadMore,
+    ensureAllLoaded,
+    formatPosted,
+  } = useJobs();
 
   const filteredCount = useMemo(() => {
     const kws = search.toLowerCase().split(/\s+/).filter(Boolean);
@@ -561,6 +595,12 @@ export default function App() {
       (!companyFilter || j.company === companyFilter)
     ).length;
   }, [jobs, search, areaFilter, companyFilter]);
+
+  useEffect(() => {
+    if (search || areaFilter || companyFilter) {
+      void ensureAllLoaded();
+    }
+  }, [search, areaFilter, companyFilter, ensureAllLoaded]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -612,6 +652,7 @@ export default function App() {
             areaFilter={areaFilter} setAreaFilter={setAreaFilter}
             companyFilter={companyFilter} setCompanyFilter={setCompanyFilter}
             count={filteredCount}
+            totalCount={totalCount}
             areas={areas}
             companies={companies}
             loading={loading}
@@ -629,8 +670,12 @@ export default function App() {
             formatPosted={formatPosted}
             search={search}
             areaFilter={areaFilter}
+            setAreaFilter={setAreaFilter}
             companyFilter={companyFilter}
             setCompanyFilter={setCompanyFilter}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
+            onLoadMore={loadMore}
           />
         )
         : <InterviewTab />}
